@@ -33,23 +33,7 @@ The action skips updates if the PR title already has a ticket prefix or `[STORY 
 
 ### Basic Usage
 
-```yaml
-name: JIRA PR Automation
-on:
-  pull_request:
-    types: [opened]
-
-permissions:
-  pull-requests: write
-  contents: read
-
-jobs:
-  jira-automation:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Auto-format PR with JIRA ticket
-        uses: enosix/ghac-format-pr@stable
-```
+You can just copy the [.github/workflows/pr-automation.yaml](.github/workflows/pr-automation.yaml) file into your own repo to get started.
 
 ### Custom Configuration
 
@@ -57,7 +41,7 @@ jobs:
 name: JIRA PR Automation
 on:
   pull_request:
-    types: [opened]
+    types: [opened, reopened]
 
 permissions:
   pull-requests: write
