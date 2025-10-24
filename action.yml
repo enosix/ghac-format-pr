@@ -21,6 +21,9 @@ inputs:
     description: 'Label to use when no ticket found'
     required: false
     default: '[STORY NEEDED]'
+  pr-number:
+    description: 'PR number (optional, defaults to context PR)'
+    required: false
 
 runs:
   using: 'composite'
@@ -30,7 +33,7 @@ runs:
       with:
         github-token: ${{ inputs.github-token }}
         script: |
-          const prNumber = context.issue.number;
+          const prNumber = '${{ inputs.pr-number }}' || context.issue.number;
           
           const { data: pullRequest } = await github.rest.pulls.get({
             owner: context.repo.owner,
