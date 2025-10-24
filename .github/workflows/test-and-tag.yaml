@@ -25,8 +25,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Create a test branch
-            const testBranch = 'test-branch-' + Date.now();
+            // Create a test branch with JIRA ticket naming
+            const testBranch = 'PROD-1234-test-branch-' + Date.now();
             const { data: mainRef } = await github.rest.git.getRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -40,14 +40,14 @@ jobs:
               sha: mainRef.object.sha
             });
             
-            // Create a test PR
+            // Create a test PR without ticket prefix in title
             const { data: pr } = await github.rest.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: '[TEST] Test PR for formatting validation',
+              title: 'Test PR for JIRA automation',
               head: testBranch,
               base: 'main',
-              body: 'This is a test PR to validate the formatting action works correctly.'
+              body: 'This is a test PR to validate the JIRA automation action.'
             });
             
             core.setOutput('pr_number', pr.number);
@@ -56,11 +56,10 @@ jobs:
       - name: Test Action
         uses: ./
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          pr_number: ${{ steps.test-pr.outputs.pr_number }}
-          require_description: 'true'
-          min_description_length: '10'
-          block_on_fail: 'false'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          jira-base-url: 'https://enosix.atlassian.net'
+          ticket-prefix: 'PROD'
+          story-needed-label: '[STORY NEEDED]'
       - name: Close Test PR
         if: always()
         uses: actions/github-script@v7

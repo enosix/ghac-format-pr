@@ -1,104 +1,101 @@
-# Format PR GitHub Action
+# JIRA PR Automation GitHub Action
 
-This GitHub Action, named `Format PR`, is designed to enforce formatting rules for Pull Requests in your project. It provides a variety of inputs to customize the validation process, and outputs whether the PR formatting is valid.
+This GitHub Action automatically formats pull requests with JIRA ticket information. When a PR is opened, it:
+
+1. **Assigns the PR to the author**
+2. **Adds JIRA ticket prefix to the title** (extracted from branch name)
+3. **Links the JIRA ticket** in the PR description
 
 ## Inputs
 
-- `github_token`: GitHub Token. Required.
-- `pr_number`: Pull Request Number. Optional - if not provided, will use the PR from the triggering event.
-- `title_format`: Title Format Regex. Optional - regex pattern that the PR title must match.
-- `body_format`: Body Format Requirements. Optional - requirements for the PR body.
-- `require_description`: Require PR Description. Optional, defaults to 'true'.
-- `min_description_length`: Minimum Description Length. Optional, defaults to '10' characters.
-- `block_on_fail`: Block PR if formatting fails. Optional, defaults to 'true'.
-- `slack_webhook_url`: Slack Webhook URL to send notifications. Optional.
+- `github-token`: GitHub token for API access. Required. Default: `${{ github.token }}`
+- `jira-base-url`: JIRA base URL (e.g., https://enosix.atlassian.net). Optional. Default: `https://enosix.atlassian.net`
+- `ticket-prefix`: JIRA ticket prefix (e.g., PROD). Optional. Default: `PROD`
+- `story-needed-label`: Label to use when no ticket found. Optional. Default: `[STORY NEEDED]`
 
-## Outputs
+## How It Works
 
-- `valid`: Whether the PR formatting is valid (true/false).
+The action extracts the JIRA ticket number from the branch name and:
 
-## Steps
+- If a ticket is found (e.g., branch `PROD-1234-feature`):
+  - Updates title to: `[PROD-1234] Original Title`
+  - Adds JIRA link to description: `https://enosix.atlassian.net/browse/PROD-1234`
+  
+- If no ticket is found:
+  - Updates title to: `[STORY NEEDED] Original Title`
 
-1. Get PR Details: Retrieves the pull request information including title and body.
-2. Validate PR Format: Validates the PR against the configured formatting rules.
-3. Add Comment on Failure: Adds a comment to the PR if formatting validation fails.
-4. Send notification to slack: Sends a notification to Slack if validation fails and a Slack webhook URL is provided.
+The action skips updates if the PR title already has a ticket prefix or `[STORY NEEDED]` label.
 
 ## Usage
 
-To use this action, include it in your workflow file with the necessary inputs. Here's an example:
+**Important**: This action must be triggered on `pull_request` with `types: [opened]` to work correctly.
+
+### Basic Usage
 
 ```yaml
-- name: Format PR
-  uses: enosix/ghac-format-pr@stable
-  with:
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-    require_description: 'true'
-    min_description_length: '20'
-    title_format: '^\[.+\].+'
-    block_on_fail: 'true'
-    slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
-```
-
-### Example Workflow
-
-Here's a complete example workflow that validates PR formatting on pull request events:
-
-```yaml
-name: PR Format Check
+name: JIRA PR Automation
 on:
   pull_request:
-    types: [opened, edited, synchronize]
+    types: [opened]
 
 permissions:
   pull-requests: write
   contents: read
 
 jobs:
-  format-check:
+  jira-automation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Validate PR Format
+      - name: Auto-format PR with JIRA ticket
+        uses: enosix/ghac-format-pr@stable
+```
+
+### Custom Configuration
+
+```yaml
+name: JIRA PR Automation
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  jira-automation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-format PR with JIRA ticket
         uses: enosix/ghac-format-pr@stable
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          require_description: 'true'
-          min_description_length: '20'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          jira-base-url: 'https://yourcompany.atlassian.net'
+          ticket-prefix: 'PROJ'
+          story-needed-label: '[NO TICKET]'
 ```
 
-## Configuration Examples
+## Examples
 
-### Require PR Title with Ticket Reference
+### Branch: `PROD-1234-add-new-feature`
+**Before:**
+- Title: `Add new feature`
+- Body: `This adds a new feature for users`
 
-```yaml
-- name: Check PR Title
-  uses: enosix/ghac-format-pr@stable
-  with:
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-    title_format: '^\[(JIRA-\d+|TICKET-\d+)\]'
-```
+**After:**
+- Title: `[PROD-1234] Add new feature`
+- Body: 
+  ```
+  This adds a new feature for users
+  
+  ---
+  
+  https://enosix.atlassian.net/browse/PROD-1234
+  ```
 
-### Require Detailed Description
+### Branch: `add-new-feature` (no ticket)
+**Before:**
+- Title: `Add new feature`
 
-```yaml
-- name: Check PR Description
-  uses: enosix/ghac-format-pr@stable
-  with:
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-    require_description: 'true'
-    min_description_length: '50'
-```
-
-### With Slack Notifications
-
-```yaml
-- name: Format PR with Slack
-  uses: enosix/ghac-format-pr@stable
-  with:
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-    require_description: 'true'
-    slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
-```
-
-Make sure to set appropriate secrets in your repository settings.
+**After:**
+- Title: `[STORY NEEDED] Add new feature`

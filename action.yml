@@ -1,133 +1,115 @@
-name: 'Format PR'
-description: 'Add formatting rules for PRs in a project'
-inputs:
-  github_token:
-    description: 'GitHub Token'
-    required: true
-  pr_number:
-    description: 'Pull Request Number'
-    required: false
-  title_format:
-    description: 'Title Format Regex'
-    required: false
-  body_format:
-    description: 'Body Format Requirements'
-    required: false
-  require_description:
-    description: 'Require PR Description'
-    required: false
-    default: 'true'
-  min_description_length:
-    description: 'Minimum Description Length'
-    required: false
-    default: '10'
-  block_on_fail:
-    description: 'Block PR if formatting fails'
-    required: false
-    default: 'true'
-  slack_webhook_url:
-    description: 'Slack Webhook URL'
-    required: false
+name: 'JIRA PR Automation'
+description: 'Auto-assign PR, add JIRA ticket prefix, and link to Atlassian'
+branding:
+  icon: 'git-pull-request'
+  color: 'blue'
 
-outputs:
-  valid:
-    description: "Whether PR formatting is valid"
-    value: ${{ steps.validate.outputs.valid }}
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+    default: ${{ github.token }}
+  jira-base-url:
+    description: 'JIRA base URL (e.g., https://enosix.atlassian.net)'
+    required: false
+    default: 'https://enosix.atlassian.net'
+  ticket-prefix:
+    description: 'JIRA ticket prefix (e.g., PROD)'
+    required: false
+    default: 'PROD'
+  story-needed-label:
+    description: 'Label to use when no ticket found'
+    required: false
+    default: '[STORY NEEDED]'
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
-    - name: Get PR Details
-      id: pr
+    - name: Process Pull Request
       uses: actions/github-script@v7
       with:
-        github-token: ${{ inputs.github_token }}
+        github-token: ${{ inputs.github-token }}
         script: |
-          const prNumber = ${{ inputs.pr_number }} || context.payload.pull_request.number;
-          const { data: pr } = await github.rest.pulls.get({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: prNumber
-          });
-          core.setOutput('title', pr.title);
-          core.setOutput('body', pr.body || '');
-          core.setOutput('number', prNumber);
-    - name: Validate PR Format
-      id: validate
-      shell: bash
-      env:
-        PR_TITLE: ${{ steps.pr.outputs.title }}
-        PR_BODY: ${{ steps.pr.outputs.body }}
-        REQUIRE_DESC: ${{ inputs.require_description }}
-        MIN_LENGTH: ${{ inputs.min_description_length }}
-        TITLE_FORMAT: ${{ inputs.title_format }}
-        BLOCK_ON_FAIL: ${{ inputs.block_on_fail }}
-      run: |
-        valid=true
-        errors=""
-        
-        # Check title format if provided
-        if [ -n "$TITLE_FORMAT" ]; then
-          if ! echo "$PR_TITLE" | grep -qE "$TITLE_FORMAT"; then
-            valid=false
-            errors="${errors}\n- Title does not match required format: $TITLE_FORMAT"
-          fi
-        fi
-        
-        # Check if description is required
-        if [ "$REQUIRE_DESC" = "true" ]; then
-          if [ -z "$PR_BODY" ]; then
-            valid=false
-            errors="${errors}\n- PR description is required but missing"
-          elif [ ${#PR_BODY} -lt $MIN_LENGTH ]; then
-            valid=false
-            errors="${errors}\n- PR description must be at least $MIN_LENGTH characters (current: ${#PR_BODY})"
-          fi
-        fi
-        
-        echo "valid=$valid" >> $GITHUB_OUTPUT
-        
-        if [ "$valid" = "false" ]; then
-          echo "PR formatting validation failed:"
-          echo -e "$errors"
-          if [ "$BLOCK_ON_FAIL" = "true" ]; then
-            exit 1
-          fi
-        else
-          echo "PR formatting validation passed"
-        fi
-    - name: Add Comment on Failure
-      if: failure() && steps.validate.outputs.valid == 'false'
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ inputs.github_token }}
-        script: |
-          const prNumber = ${{ steps.pr.outputs.number }};
-          await github.rest.issues.createComment({
+          const prNumber = context.issue.number;
+          const author = context.payload.pull_request.user.login;
+          const currentTitle = context.payload.pull_request.title;
+          const currentBody = context.payload.pull_request.body || '';
+          const branchName = context.payload.pull_request.head.ref;
+          
+          const jiraBaseUrl = '${{ inputs.jira-base-url }}';
+          const ticketPrefix = '${{ inputs.ticket-prefix }}';
+          const storyNeededLabel = '${{ inputs.story-needed-label }}';
+          
+          // Assign PR to author
+          await github.rest.issues.addAssignees({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: prNumber,
-            body: '## PR Formatting Issues\n\nThis PR does not meet the formatting requirements. Please review and update accordingly.'
+            assignees: [author]
           });
-    - name: Send notification to slack
-      if: ${{ failure() && inputs.slack_webhook_url != '' }}
-      uses: slackapi/slack-github-action@v1.24.0
-      with:
-        payload: |
-          {
-            "channel": "platform-automated",
-            "username": "Github Actions",
-            "icon_url": "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
-            "attachments": {
-              "fallback": "${{ github.repository }} PR #${{ steps.pr.outputs.number }} failed formatting check",
-              "color": "danger",
-              "fields": {
-                "title": "PR #${{ steps.pr.outputs.number }} has formatting issues",
-                "title_link": "https://github.com/${{ github.repository }}/pull/${{ steps.pr.outputs.number }}",
-                "value": "Please check the PR and update the formatting."
-              }
+          console.log(`✓ Assigned PR to ${author}`);
+          
+          let newTitle = currentTitle;
+          let newBody = currentBody;
+          let ticketNumber = null;
+          
+          // Create dynamic regex patterns based on ticket prefix
+          const titleTicketRegex = new RegExp(`^(\\[)?${ticketPrefix}-\\d+(\\])?`, 'i');
+          const titleStoryNeededRegex = new RegExp(`^\\[STORY NEEDED\\]`, 'i');
+          const ticketMatchRegex = new RegExp(`${ticketPrefix}-(\\d+)`, 'i');
+          
+          const titleHasTicket = titleTicketRegex.test(currentTitle);
+          const titleHasStoryNeeded = titleStoryNeededRegex.test(currentTitle);
+          
+          if (!titleHasTicket && !titleHasStoryNeeded) {
+            const ticketMatch = branchName.match(ticketMatchRegex);
+          
+            if (ticketMatch) {
+              ticketNumber = ticketMatch[0].toUpperCase();
+              newTitle = `[${ticketNumber}] ${currentTitle}`;
+              console.log(`✓ Found ticket ${ticketNumber} in branch name`);
+            } else {
+              newTitle = `${storyNeededLabel} ${currentTitle}`;
+              console.log(`⚠ No ${ticketPrefix} ticket found in branch name - added ${storyNeededLabel}`);
+            }
+          } else {
+            console.log('ℹ PR title already has prefix');
+            const existingTicket = currentTitle.match(ticketMatchRegex);
+            if (existingTicket) {
+              ticketNumber = existingTicket[0].toUpperCase();
             }
           }
-      env:
-        SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook_url }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+          
+          // Check if body already has JIRA link and add if needed
+          const jiraLinkPattern = new RegExp(`${jiraBaseUrl.replace(/\./g, '\\.')}/browse/${ticketPrefix}-\\d+`, 'i');
+          const bodyHasJiraLink = jiraLinkPattern.test(currentBody);
+          
+          if (ticketNumber && !bodyHasJiraLink) {
+            const jiraLink = `${jiraBaseUrl}/browse/${ticketNumber}`;
+            newBody = currentBody.trim() 
+              ? `${currentBody.trim()}\n\n---\n\n${jiraLink}`
+              : jiraLink;
+            console.log(`✓ Added JIRA link to PR description: ${jiraLink}`);
+          } else if (ticketNumber && bodyHasJiraLink) {
+            console.log('ℹ PR description already contains a JIRA link');
+          } else if (!ticketNumber) {
+            console.log('ℹ No ticket number available to add JIRA link');
+          }
+          
+          // Update PR if changes were made
+          if (newTitle !== currentTitle || newBody !== currentBody) {
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              title: newTitle,
+              body: newBody
+            });
+          
+            if (newTitle !== currentTitle) {
+              console.log(`✓ Updated PR title: "${currentTitle}" → "${newTitle}"`);
+            }
+            if (newBody !== currentBody) {
+              console.log('✓ Updated PR description with JIRA link');
+            }
+          }
