@@ -1,0 +1,115 @@
+name: 'JIRA PR Automation'
+description: 'Auto-assign PR, add JIRA ticket prefix, and link to Atlassian'
+branding:
+  icon: 'git-pull-request'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+    default: ${{ github.token }}
+  jira-base-url:
+    description: 'JIRA base URL (e.g., https://enosix.atlassian.net)'
+    required: false
+    default: 'https://enosix.atlassian.net'
+  ticket-prefix:
+    description: 'JIRA ticket prefix (e.g., PROD)'
+    required: false
+    default: 'PROD'
+  story-needed-label:
+    description: 'Label to use when no ticket found'
+    required: false
+    default: '[STORY NEEDED]'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Process Pull Request
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const prNumber = context.issue.number;
+          const author = context.payload.pull_request.user.login;
+          const currentTitle = context.payload.pull_request.title;
+          const currentBody = context.payload.pull_request.body || '';
+          const branchName = context.payload.pull_request.head.ref;
+          
+          const jiraBaseUrl = '${{ inputs.jira-base-url }}';
+          const ticketPrefix = '${{ inputs.ticket-prefix }}';
+          const storyNeededLabel = '${{ inputs.story-needed-label }}';
+          
+          // Assign PR to author
+          await github.rest.issues.addAssignees({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: prNumber,
+            assignees: [author]
+          });
+          console.log(`✓ Assigned PR to ${author}`);
+          
+          let newTitle = currentTitle;
+          let newBody = currentBody;
+          let ticketNumber = null;
+          
+          // Create dynamic regex patterns based on ticket prefix
+          const titleTicketRegex = new RegExp(`^(\\[)?${ticketPrefix}-\\d+(\\])?`, 'i');
+          const titleStoryNeededRegex = new RegExp(`^\\[STORY NEEDED\\]`, 'i');
+          const ticketMatchRegex = new RegExp(`${ticketPrefix}-(\\d+)`, 'i');
+          
+          const titleHasTicket = titleTicketRegex.test(currentTitle);
+          const titleHasStoryNeeded = titleStoryNeededRegex.test(currentTitle);
+          
+          if (!titleHasTicket && !titleHasStoryNeeded) {
+            const ticketMatch = branchName.match(ticketMatchRegex);
+          
+            if (ticketMatch) {
+              ticketNumber = ticketMatch[0].toUpperCase();
+              newTitle = `[${ticketNumber}] ${currentTitle}`;
+              console.log(`✓ Found ticket ${ticketNumber} in branch name`);
+            } else {
+              newTitle = `${storyNeededLabel} ${currentTitle}`;
+              console.log(`⚠ No ${ticketPrefix} ticket found in branch name - added ${storyNeededLabel}`);
+            }
+          } else {
+            console.log('ℹ PR title already has prefix');
+            const existingTicket = currentTitle.match(ticketMatchRegex);
+            if (existingTicket) {
+              ticketNumber = existingTicket[0].toUpperCase();
+            }
+          }
+          
+          // Check if body already has JIRA link and add if needed
+          const jiraLinkPattern = new RegExp(`${jiraBaseUrl.replace(/\./g, '\\.')}/browse/${ticketPrefix}-\\d+`, 'i');
+          const bodyHasJiraLink = jiraLinkPattern.test(currentBody);
+          
+          if (ticketNumber && !bodyHasJiraLink) {
+            const jiraLink = `${jiraBaseUrl}/browse/${ticketNumber}`;
+            newBody = currentBody.trim() 
+              ? `${currentBody.trim()}\n\n---\n\n${jiraLink}`
+              : jiraLink;
+            console.log(`✓ Added JIRA link to PR description: ${jiraLink}`);
+          } else if (ticketNumber && bodyHasJiraLink) {
+            console.log('ℹ PR description already contains a JIRA link');
+          } else if (!ticketNumber) {
+            console.log('ℹ No ticket number available to add JIRA link');
+          }
+          
+          // Update PR if changes were made
+          if (newTitle !== currentTitle || newBody !== currentBody) {
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              title: newTitle,
+              body: newBody
+            });
+          
+            if (newTitle !== currentTitle) {
+              console.log(`✓ Updated PR title: "${currentTitle}" → "${newTitle}"`);
+            }
+            if (newBody !== currentBody) {
+              console.log('✓ Updated PR description with JIRA link');
+            }
+          }
