@@ -12,6 +12,7 @@ This GitHub Action automatically formats pull requests with JIRA ticket informat
 - `jira-base-url`: JIRA base URL (e.g., https://enosix.atlassian.net). Optional. Default: `https://enosix.atlassian.net`
 - `ticket-prefix`: JIRA ticket prefix (e.g., PROD). Optional. Default: `PROD`
 - `story-needed-label`: Label to use when no ticket found. Optional. Default: `[STORY NEEDED]`
+- `pr-number`: PR number to process. Optional. Default: auto-detected from PR context
 
 ## How It Works
 
