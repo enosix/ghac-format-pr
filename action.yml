@@ -31,10 +31,17 @@ runs:
         github-token: ${{ inputs.github-token }}
         script: |
           const prNumber = context.issue.number;
-          const author = context.payload.pull_request.user.login;
-          const currentTitle = context.payload.pull_request.title;
-          const currentBody = context.payload.pull_request.body || '';
-          const branchName = context.payload.pull_request.head.ref;
+          
+          const { data: pullRequest } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: prNumber
+          });
+          
+          const author = pullRequest.user.login;
+          const currentTitle = pullRequest.title;
+          const currentBody = pullRequest.body || '';
+          const branchName = pullRequest.head.ref;
           
           const jiraBaseUrl = '${{ inputs.jira-base-url }}';
           const ticketPrefix = '${{ inputs.ticket-prefix }}';
