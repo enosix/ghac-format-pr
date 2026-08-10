@@ -1,28 +1,46 @@
 name: Test and Tag
 on:
+  pull_request: {}
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag Name'
+      bump:
+        description: 'The type of semantic version increment to make'
         required: true
-        default: 'dev'
+        default: 'patch'
         type: choice
         options:
-          - 'dev'
-          - 'stable'
+          - major
+          - minor
+          - patch
+          - none
+      dry_run:
+        description: 'If true, only calculate the new version and exit successfully.'
+        required: false
+        default: false
 
 permissions:
   contents: write
   pull-requests: write
 
+env:
+  bump: ${{ github.event_name == 'pull_request' && 'none' || github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'patch' }}
+  prerelease_version: ${{ github.event_name == 'pull_request' && format('pr{0}', github.event.number) || '' }}
+  dry_run: ${{ github.event_name == 'pull_request' && 'true' || github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run || 'false' }}
+
 jobs:
   test-and-tag:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Create Test PR
         id: test-pr
-        uses: actions/github-script@v7
+        if: github.event_name != 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const testBranch = 'PROD-1234-test-branch-' + Date.now();
@@ -99,14 +117,17 @@ jobs:
           jira-base-url: 'https://enosix.atlassian.net'
           ticket-prefix: 'PROD'
           story-needed-label: '[STORY NEEDED]'
-          pr-number: ${{ steps.test-pr.outputs.pr_number }}
+          pr-number: ${{ github.event_name == 'pull_request' && github.event.number || steps.test-pr.outputs.pr_number }}
       - name: Close Test PR
-        if: always()
-        uses: actions/github-script@v7
+        if: always() && github.event_name != 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+            PR_NUMBER: ${{ steps.test-pr.outputs.pr_number }}
+            BRANCH_NAME: ${{ steps.test-pr.outputs.branch }}
         with:
           script: |
-            const prNumber = parseInt('${{ steps.test-pr.outputs.pr_number }}');
-            const branch = '${{ steps.test-pr.outputs.branch }}';
+            const prNumber = process.env.PR_NUMBER;
+            const branch = process.env.BRANCH_NAME;
             
             if (prNumber && branch) {
               await github.rest.pulls.update({
@@ -122,27 +143,12 @@ jobs:
                 ref: `heads/${branch}`
               });
             }
-      - name: Create tag
-        uses: actions/github-script@v7
+
+      - name: Generate Semantic Version
+        uses: enosix/github-action-generate-semver@4ab2e5251fb8c5b9b06eb65b22c0e25daba76311 # v4.0.1
         with:
-          script: |
-            try {
-              await github.rest.git.updateRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: 'tags/${{ github.event.inputs.tag }}',
-                sha: context.sha,
-                force: true
-              })
-            } catch (err) {
-              if (err.status === 422) {
-                await github.rest.git.createRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: 'refs/tags/${{ github.event.inputs.tag }}',
-                  sha: context.sha,
-                })
-              } else {
-                throw err
-              }
-            }
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          bump: ${{ env.bump }}
+          prerelease_version: ${{ env.prerelease_version }}
+          dry_run: ${{ env.dry_run }}
+          detect_bump: ${{ github.event_name == 'push' }}
