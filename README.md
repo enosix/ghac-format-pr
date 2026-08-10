@@ -33,7 +33,26 @@ The action skips updates if the PR title already has a ticket prefix or `[STORY 
 
 ### Basic Usage
 
-You can just copy the [.github/workflows/pr-automation.yaml](.github/workflows/pr-automation.yaml) file into your own repo to get started.
+```yaml
+name: PR Automation
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  format-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Format PR
+        uses: enosix/ghac-format-pr@stable
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
 
 ### Custom Configuration
 

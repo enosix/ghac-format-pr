@@ -29,11 +29,16 @@ runs:
   using: 'composite'
   steps:
     - name: Process Pull Request
-      uses: actions/github-script@v7
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        JIRA_BASE_URL: ${{ inputs.jira-base-url }}
+        TICKET_PREFIX: ${{ inputs.ticket-prefix }}
+        STORY_NEEDED_LABEL: ${{ inputs.story-needed-label }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
-          const prNumber = '${{ inputs.pr-number }}' || context.issue.number;
+          const prNumber = process.env.PR_NUMBER || context.issue.number;
           
           const { data: pullRequest } = await github.rest.pulls.get({
             owner: context.repo.owner,
@@ -46,9 +51,9 @@ runs:
           const currentBody = pullRequest.body || '';
           const branchName = pullRequest.head.ref;
           
-          const jiraBaseUrl = '${{ inputs.jira-base-url }}';
-          const ticketPrefix = '${{ inputs.ticket-prefix }}';
-          const storyNeededLabel = '${{ inputs.story-needed-label }}';
+          const jiraBaseUrl = process.env.JIRA_BASE_URL;
+          const ticketPrefix = process.env.TICKET_PREFIX;
+          const storyNeededLabel = process.env.STORY_NEEDED_LABEL;
           
           // Assign PR to author (skip for bots)
           if (!author.includes('[bot]')) {
