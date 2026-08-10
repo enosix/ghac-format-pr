@@ -39,6 +39,7 @@ jobs:
           persist-credentials: false
       - name: Create Test PR
         id: test-pr
+        if: github.event_name != 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -116,17 +117,17 @@ jobs:
           jira-base-url: 'https://enosix.atlassian.net'
           ticket-prefix: 'PROD'
           story-needed-label: '[STORY NEEDED]'
-          pr-number: ${{ steps.test-pr.outputs.pr_number }}
+          pr-number: ${{ github.event_name == 'pull_request' && github.event.number || steps.test-pr.outputs.pr_number }}
       - name: Close Test PR
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
             PR_NUMBER: ${{ steps.test-pr.outputs.pr_number }}
             BRANCH_NAME: ${{ steps.test-pr.outputs.branch }}
         with:
           script: |
-            const prNumber = workflow.env.PR_NUMBER;
-            const branch = workflow.env.BRANCH_NAME;
+            const prNumber = process.env.PR_NUMBER;
+            const branch = process.env.BRANCH_NAME;
             
             if (prNumber && branch) {
               await github.rest.pulls.update({
@@ -150,4 +151,4 @@ jobs:
           bump: ${{ env.bump }}
           prerelease_version: ${{ env.prerelease_version }}
           dry_run: ${{ env.dry_run }}
-          detect_bump: true
+          detect_bump: ${{ github.event_name == 'push' }}
